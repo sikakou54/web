@@ -1,3 +1,6 @@
+#!/usr/local/bin/python3
+# coding: utf-8
+
 from flask import Flask, redirect, url_for, session
 from flask import render_template, request
 import os, json, datetime
@@ -51,4 +54,4 @@ def show_msg( msg ):
     return render_template('msg.html', msg=msg )
 
 if __name__ == "__main__":
-    app.run(host='192.168.11.4', debug=True)
+    app.run()

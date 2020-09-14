@@ -1,3 +1,5 @@
+#!/usr/local/bin/python3
+# coding: utf-8
 import os, json, datetime
 
 #保存先ファイル
