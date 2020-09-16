@@ -8,13 +8,9 @@ SAVE_FILE = BASE_DIR + '/data/log.json'
 
 #ログ(JSON)ファイルを読み出す
 def load_data():
-    print(SAVE_FILE)
     if not os.path.exists(SAVE_FILE):
-        print('none file')
         return
-    print('find file')
     with open( SAVE_FILE, 'rt', encoding='utf-8') as f:
-        print('open file')
         return json.load( f )
 
 #ログ(JSON)ファイルに書き込む

@@ -13,10 +13,8 @@ app.secret_key = 'asdf'
 @app.route('/')
 def index():
     if not bbs_login.is_login():
-        print('please login')
         return redirect('/login')
 
-    print('already login')
     return render_template('index.html',
                             user=bbs_login.get_user(),
                             data=bbs_data.load_data())
@@ -30,7 +28,6 @@ def try_login():
     user = request.form.get('user','')
     pw = request.form.get('pw','')
     if bbs_login.try_login( user, pw ):
-        print('login success')
         return redirect('/')
     return show_msg('ログインに失敗しました')
 

@@ -10,12 +10,10 @@ USERLIST = {
 }
 
 def is_login():
-    print('is_login')
     return 'login' in session
 
-
 def try_login( user, pw ):
-    if user not in USERLIST:
+    if not user in USERLIST:
         return False
     if USERLIST[user] != pw:
         return False
@@ -28,6 +26,5 @@ def try_logout():
 
 def get_user():
     if is_login():
-        print('get_user')
         return session['login']
     return'not login'
