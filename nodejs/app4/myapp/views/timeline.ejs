@@ -12,24 +12,16 @@
 
         <% timelines.forEach(function(timeline){ %>
         <div id="selected-item">
-            <h1><%= timeline.data %> </h1>
-            <form action="./play">
-                <div id="chk_item">
-                    <input id="item_positive" type="radio" name="item" value="positive">
-                    <label for="item_positive">肯定</label>
-                </div>
-                <div id="chk_item">
-                    <input id="item_negative" type="radio" name="item" value="negative">
-                    <label for="item_negative">否定</label>
-                </div>
-                <div id="chk_item">
-                    <input id="item_audience" type="radio" name="item" value="audience">
-                    <label for="item_audience">視聴</label>
-                </div>
-
-                <div id="chk_item">
-                    <input id="submit_btn" type="submit" value="OK">
-                </div>
+            <form method="POST" action="/play">
+                <input id="theme" type="text" name="theme" readonly="readonly" value="<%= timeline.data %>">
+                <input id="roomId" type="text" name="roomID" readonly="readonly" value="<%= timeline.roomId %>">
+                <input id="item_positive" type="radio" name="item_type" value="肯定"">
+                <label for="item_positive" >肯定</label>
+                <input id="item_negative" type="radio" name="item_type" value="否定">
+                <label for="item_negative">否定</label>
+                <input id="item_audience" type="radio" name="item_type" value="視聴">
+                <label for="item_audience">視聴</label>
+                <input id="submit_btn" type="submit" value="OK">
             </form>
         </div>
         <% }) %>

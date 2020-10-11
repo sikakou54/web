@@ -72,3 +72,7 @@ input#submit_btn {
     height: 50px;
 }
 
+input[type=text] {
+  border: none;
+  outline: none;
+}
