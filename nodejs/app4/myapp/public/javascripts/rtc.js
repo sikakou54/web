@@ -2,18 +2,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const socket = window.io();
     let rtcPeerConnection;
     let remoteStream;  // 2人目の相手の接続を受け取らないようにするため、1人目の接続で受け取った Stream を保持しておく
+    let localStream = null;
+    let livers = new Array();
     
-    socket
-      .on('connect', () => {
+    socket.on('connect', () => {
         // 画面初期表示時にサーバと接続する
         console.log('on connect');
       })
-      .on('message', async (event) => {
+
+    socket.on('talk_req', async (req_data) => {
+
+      console.log('req_data :', req_data );
+
+      if( localStream != null ){
+        const sessionDescription = await rtcPeerConnection.createOffer();
+        await rtcPeerConnection.setLocalDescription(sessionDescription);
+        // Socket を経由して Offer SDP を送る
+        socket.emit('message', JSON.stringify({ sdp: rtcPeerConnection.localDescription }));
+      }
+    });
+    
+    socket.on('message', async (event) => {
   
         // 別の人が Start するとココに入ってくる
         let parsedEvent;
+        let sdpLines = '';
+
         try {
           parsedEvent = JSON.parse(event);
+          console.log('parsedEvent :', parsedEvent );
         }
         catch(error) {
           return console.warn('on message : Failed To Parse', error);
@@ -26,42 +43,54 @@ document.addEventListener('DOMContentLoaded', () => {
         // トップレベルプロパティは sdp か candidate のみ
         try {
           if(parsedEvent.sdp) {
-            // FIXME : 2人目の相手が接続してくると Failed to set remote answer sdp: Called in wrong state: kStable が発生する (type: 'answer' 時)
-            //         それを回避するための暫定策として、1人目と接続している最中は2人目以降の相手の接続を無視することにする
-            if(remoteStream) {
-  
-              console.log('stream is already');
-  
-              return //console.log('  on message : Remote Stream Is Already Added, Ignore');
+
+            let sdp_data = parsedEvent.sdp.sdp;
+            let params = '';
+            let sId = '';
+
+            // sdpデータをからセッションIDを取得する
+            sdpLines = sdp_data.split('\n').map(l => l.trim());
+            for(var i = 0; i < sdpLines.length; i++) {
+              if(sdpLines[i].match('^o=') != null ) {
+                params = sdpLines[i].split(' ').map(l => l.trim());
+                sId = params[1];
+                break;
+              }
             }
             
-            console.log('setRemoteDescription :',parsedEvent.sdp);
-
-            // sdp プロパティ配下は type: 'offer' or 'answer' と sdp プロパティ
-            await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(parsedEvent.sdp));
-            // FIXME : iOS Safari が後から来た接続を受け取った時 (type: 'offer') に以下のエラーが出る
-            //         InvalidStateError: description type incompatible with current signaling state
-            //         iOS Safari が後から接続すれば正常に接続できる。回避策が分からない
-            
-            if(parsedEvent.sdp.type === 'offer') {
-              console.log('receive: offer');
-  
-              //console.log('on message : SDP Offer', parsedEvent);
+            if( livers.indexOf(sId) == -1 ) {
+              console.log('setRemoteDescription :', parsedEvent.sdp);
+              // sdp プロパティ配下は type: 'offer' or 'answer' と sdp プロパティ
+              await rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(parsedEvent.sdp));
+              // FIXME : iOS Safari が後から来た接続を受け取った時 (type: 'offer') に以下のエラーが出る
+              //         InvalidStateError: description type incompatible with current signaling state
+              //         iOS Safari が後から接続すれば正常に接続できる。回避策が分からない
               
-              // type: 'answer' 時に createAnswer() すると以下のエラーが出るので type: 'offer' のみにする
-              // Failed to execute 'createAnswer' on 'RTCPeerConnection': PeerConnection cannot create an answer in a state other than have-remote-offer or have-local-pranswer.
-              const answer = await rtcPeerConnection.createAnswer();
-              
-              console.log('setLocalDescription :', answer );
+              if(parsedEvent.sdp.type === 'offer') {
+                console.log('receive: offer');
+                
+                // type: 'answer' 時に createAnswer() すると以下のエラーが出るので type: 'offer' のみにする
+                // Failed to execute 'createAnswer' on 'RTCPeerConnection': PeerConnection cannot create an answer in a state other than have-remote-offer or have-local-pranswer.
+                const answer = await rtcPeerConnection.createAnswer();
+                
+                console.log('setLocalDescription :', answer );
 
-              await rtcPeerConnection.setLocalDescription(answer);
+                await rtcPeerConnection.setLocalDescription(answer);
 
-              // Socket を経由して Answer SDP を送る (送る内容は Offer SDP と同じ)
-              socket.emit('message', JSON.stringify({ sdp: rtcPeerConnection.localDescription }));
-            }
-            else {
-              console.log('receive: other sdp :' + parsedEvent.sdp.type );
-              //console.log('on message : SDP Answer (Do Nothing)', parsedEvent);
+                // Socket を経由して Answer SDP を送る (送る内容は Offer SDP と同じ)
+                socket.emit('message', JSON.stringify({ sdp: rtcPeerConnection.localDescription }));
+              }
+              else {
+                console.log('receive: other sdp :' + parsedEvent.sdp.type );
+                //console.log('on message : SDP Answer (Do Nothing)', parsedEvent);
+              }
+
+              // セッションIDを登録する
+              livers.push(sId);
+
+            } else {
+              // すでに接続済のセッションIDなら無視する
+              console.log('find sId :', sId );
             }
           }
           else if(parsedEvent.candidate) {
@@ -81,10 +110,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     
-    // ビデオを起動し Local Stream を送信する
-    document.getElementById('start-button').addEventListener('click', async () => {
+    // ビデオを開始する
+    document.getElementById('start-button').addEventListener('click', () => {
+      startVideo()
+    });
+    
+    // ビデオを停止する
+    document.getElementById('stop-button').addEventListener('click', () => {
+      stopVideo();
+    });
+
+    // 配信者と片方向通信をする
+    document.getElementById('talk-button').addEventListener('click', () => {
+
       try {
-        const localStream = await getUserMedia();
+        createRtcPeerConnection(null);
+
+        // Socket を経由して Offer SDP を送る
+        socket.emit('talk_req', 'please Stream!');
+      }
+      catch(error) {
+        console.warn('Failed To Start', error);
+      }
+    });
+
+    async function startVideo() {
+      try {
+        localStream = await getUserMedia();
   
         createRtcPeerConnection(localStream);
         const sessionDescription = await rtcPeerConnection.createOffer();
@@ -95,7 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
         // Socket を経由して Offer SDP を送る
         socket.emit('message', JSON.stringify({ sdp: rtcPeerConnection.localDescription }));
-  
+
+        //ボタンを初期に戻す        
         document.getElementById('start-button').disabled = true;
         document.getElementById('stop-button' ).disabled = false;
         document.getElementById('start-button').style.display = 'none';
@@ -104,30 +157,41 @@ document.addEventListener('DOMContentLoaded', () => {
       catch(error) {
         console.warn('Failed To Start', error);
       }
-    });
-    
-    // ビデオを停止する
-    document.getElementById('stop-button').addEventListener('click', () => {
+    }
+
+    async function stopVideo() {
+
       try {
-        if(document.getElementById('local-video').srcObject) {
-          document.getElementById('local-video').srcObject.getTracks().forEach((track) => { track.stop(); });
-          document.getElementById('local-video').srcObject = null;
+        var elm_count = document.getElementById("videos" ).childElementCount;
+        console.log('video count :', elm_count );
+        if( elm_count > 0 ) {
+          var elm_nodes = document.getElementById("videos" ).childNodes;
+          for( var idx = 0; idx < elm_count; idx++ ) {
+            if( elm_nodes[idx].srcObject ) {
+              try {
+                elm_nodes[idx].srcObject.getTracks().forEach((track) => { track.stop(); });
+                elm_nodes[idx].srcObject = null;
+                console.log('removeid video :', elm_nodes[idx] );
+              }
+              catch(error) {
+                console.warn('Failed To Stop Remote Video', error);
+              }
+            }
+          }
+          //子要素を全て削除
+          document.getElementById("videos").innerHTML = '';
         }
+        
+        //二人目の接続を防ぐフラグを初期化する
+        remoteStream = null;
+
+        //Peer接続を閉じる
         if(rtcPeerConnection) {
           rtcPeerConnection.close();
           rtcPeerConnection = null;
         }
-        if(document.getElementById('remote-video').srcObject) {
-  
-          try {
-            document.getElementById('remote-video').srcObject.getTracks().forEach((track) => { track.stop(); });
-            document.getElementById('remote-video').srcObject = null;
-          }
-          catch(error) {
-            console.warn('Failed To Stop Remote Video', error);
-          }
-        }
-        remoteStream = null;
+
+        //ボタンを初期に戻す        
         document.getElementById('start-button').disabled = false;
         document.getElementById('stop-button' ).disabled = true;
         document.getElementById('start-button').style.display = 'inline';
@@ -136,8 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
       catch(error) {
         console.warn('Failed To Stop Video (Unexpected Error)', error);
       }
-    });
-    
+    }
+
     /** ビデオを開始する・例外ハンドリングは呼び出し元の #start-button のクリックイベントで行う */
     async function getUserMedia() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -153,9 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     /** getUserMedia() で取得した Stream をセットした RTCPeerConnection を作成する・例外ハンドリングは呼び出し元の #start-button のクリックイベントで行う */
-    function createRtcPeerConnection(localStream) {
+    function createRtcPeerConnection(p_localStream) {
 
-      console.log('createRtcPeerConnection :', localStream);
+      console.log('createRtcPeerConnection :', p_localStream);
 
       if(rtcPeerConnection) {
         return;
@@ -167,13 +231,15 @@ document.addEventListener('DOMContentLoaded', () => {
       
       rtcPeerConnection.onicecandidate = onicecandidate;
   
-      // Chrome などは RTCPeerConnection.addStream(localStream) が動作するが iOS Safari は動作しないので addTrack() を使う
-      // iOS Safari : https://stackoverflow.com/questions/57106846/uncaught-typeerror-peerconnection-addstream-is-not-a-function/57108963
-      localStream.getTracks().forEach((track) => {
-        console.log('track :', track);
-        
-        rtcPeerConnection.addTrack(track, localStream);
-      });
+      if( p_localStream != null ) {
+        // Chrome などは RTCPeerConnection.addStream(localStream) が動作するが iOS Safari は動作しないので addTrack() を使う
+        // iOS Safari : https://stackoverflow.com/questions/57106846/uncaught-typeerror-peerconnection-addstream-is-not-a-function/57108963
+        p_localStream.getTracks().forEach((track) => {
+          console.log('track :', track);
+          
+          rtcPeerConnection.addTrack(track, p_localStream);
+        });
+      }
       
       // iOS Safari では onaddstream が動作しないので ontrack を使用する (Chrome なども ontrack に対応)
       rtcPeerConnection.ontrack = ontrack;
@@ -203,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if(remoteStream) {
         return //console.log('  ontrack : Remote Stream Is Already Added, Ignore');  // on message で弾いているので実際はチェックしなくても大丈夫
       }
-      
+
       try {
         const video = document.createElement("video");
         video.setAttribute("playsinline",true);

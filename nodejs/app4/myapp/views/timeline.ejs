@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="./stylesheets/style.css">
+    <title>論破.net</title>
+</head>
+<body>
+    <div id="view">
+        <h1 id="title">論破.net</h1>
+
+        <% timelines.forEach(function(timeline){ %>
+        <div id="selected-item">
+            <h1><%= timeline.data %> </h1>
+            <form action="./play">
+                <div id="chk_item">
+                    <input id="item_positive" type="radio" name="item" value="positive">
+                    <label for="item_positive">肯定</label>
+                </div>
+                <div id="chk_item">
+                    <input id="item_negative" type="radio" name="item" value="negative">
+                    <label for="item_negative">否定</label>
+                </div>
+                <div id="chk_item">
+                    <input id="item_audience" type="radio" name="item" value="audience">
+                    <label for="item_audience">視聴</label>
+                </div>
+
+                <div id="chk_item">
+                    <input id="submit_btn" type="submit" value="OK">
+                </div>
+            </form>
+        </div>
+        <% }) %>
+    </div>
+</body>
+</html>

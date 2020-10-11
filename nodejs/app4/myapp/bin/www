@@ -38,6 +38,11 @@ io.on('connection', (socket) => {
     console.log('On Message', message); 
     socket.broadcast.emit('message', message);
   });
+
+  socket.on('talk_req', (message) => {
+    console.log('On talk_req :', message); 
+    socket.broadcast.emit('talk_req', message);
+  });
   
   socket.on('disconnect', () => {
     console.log('User Disconnected');
