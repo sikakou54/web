@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
 
       if( item.socketID == socket.id ) {
         
-        console.log('message', socket.id, item, index );
+        console.log('message', item, index );
 
         /* シグナリング処理 */
         socket.broadcast.to( item.room ).emit('message', message );
@@ -70,10 +70,10 @@ io.on('connection', (socket) => {
 
       if( item.socketID == socket.id ) {
 
-        console.log('disconnect', socket.id, item, index );
+        console.log('disconnect', item, index );
 
         /* roomから抜く*/
-        socket.leave( item.roomID );
+        socket.leave( item.room );
 
         /* roomメンバーに退室通知をする */
         socket.broadcast.to( item.room ).emit('req_leave_room', item.name + 'さんが退室しました');
