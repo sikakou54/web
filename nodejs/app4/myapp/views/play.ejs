@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
   <head>
     <meta charset="UTF-8">
     <title>論破.net</title>
@@ -7,20 +8,38 @@
     <script type="text/javascript" src="/socket.io/socket.io.js"></script>
     <script type="text/javascript" src="./javascripts/rtc.js"></script>
   </head>
+
   <body>
-    <h1 id="title">論破.net</h1>
-    <label for="roomID"><p id="roomID">ルームID：<%= roomID %></p></label>
-    <label for="theme"><p id="theme">テーマ：<%= theme %></p></label>
-    <label for="item_type"><p id="item_type">あなた：<%= item_type %></p></label>
+    <div class="container">
+      <h1 class="title"><a href="./">論破.net</a></h1>
 
-    <button type="button" id="talk-button">talk</button>
-    <button type="button" id="start-button">connect</button>
-    <button type="button" id="stop-button" style="display: none;" disabled>disconnect</button>
-    <div id="player_view"></div>
+      <section class="play_top">
+        <div class="play_input">
+          <p id="play_input_roomID"><%= roomID %></p>
+          <p id="play_input_user_name"><%= user_name %></p>
+          <p id="play_input_type"><%= item_type %></p>
+        </div>
+        <div class="play_theme">
+          <h1><%= theme %></h1>
+        </div>
+      </section>
 
-    <div id="videos">
-      <!-- video -->
+      <section class="play_view">
+        <div class="play_video">
+          <video id="myvideo" playsinline autoplay muted></video>
+        </div>
+        <h1 class="play_vs">VS</h1>
+        <div class="play_video">
+          <video id="remote_video" playsinline autoplay></video>
+        </div>
+      </section>
+
+      <section class="play_log">
+        <ul id="play_room_log">
+          <!-- log -->
+        </ul>
+      </section>
+
     </div>
-    
   </body>
 </html>

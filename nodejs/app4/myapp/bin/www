@@ -31,23 +31,63 @@ server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
 
+/* ルームID管理用配列 key : socket.id */
+var roomInfo = [];
+
 io.on('connection', (socket) => {
-  console.log('A User Connected');
-  
+ 
   socket.on('message', (message) => {
-    console.log('On Message', message); 
-    socket.broadcast.emit('message', message);
+
+    for(const [index, item] of roomInfo.entries() ) {
+
+      if( item.socketID == socket.id ) {
+        
+        console.log('message', socket.id, item, index );
+
+        /* シグナリング処理 */
+        socket.broadcast.to( item.room ).emit('message', message );
+
+        break;
+      }
+    }
   });
 
-  socket.on('talk_req', (message) => {
-    console.log('On talk_req :', message); 
-    socket.broadcast.emit('talk_req', message);
+  socket.on('init', (roomID, user_name ) => {
+
+    /* ユーザ毎にルームIDを管理する */
+    roomInfo.push( { socketID: socket.id, room:roomID, name:user_name } );
+
+    /* roomに参加する */
+    socket.join(roomID);
+
+    /* roomメンバーに入室通知をする */
+    socket.broadcast.to(roomID).emit('req_join_room', user_name + 'さんが入室しました');
   });
   
   socket.on('disconnect', () => {
-    console.log('User Disconnected');
+
+    for(const [index, item] of roomInfo.entries() ) {
+
+      if( item.socketID == socket.id ) {
+
+        console.log('disconnect', socket.id, item, index );
+
+        /* roomから抜く*/
+        socket.leave( item.roomID );
+
+        /* roomメンバーに退室通知をする */
+        socket.broadcast.to( item.room ).emit('req_leave_room', item.name + 'さんが退室しました');
+
+        roomInfo.splice( index, 1 );
+
+        break;
+      }
+    }
   });
+
 });
+
+
 /**
  * Normalize a port into a number, string, or false.
  */
