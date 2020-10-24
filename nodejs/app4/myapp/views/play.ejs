@@ -5,14 +5,14 @@
     <meta charset="UTF-8">
     <title>論破.net</title>
     <link rel="stylesheet" type="text/css" href="./stylesheets/style.css">
-    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
-    <script type="text/javascript" src="./javascripts/rtc.js"></script>
   </head>
 
   <body>
     <div class="container">
       <h1 class="title"><a href="./">論破.net</a></h1>
 
+      <p id="dev_socket"></p>
+      
       <section class="play_top">
         <div class="play_input">
           <p id="play_input_roomID"><%= roomID %></p>
@@ -26,11 +26,11 @@
 
       <section class="play_view">
         <div class="play_video">
-          <video id="myvideo" playsinline autoplay muted></video>
+          <video id="video_local" playsinline autoplay muted></video>
         </div>
         <h1 class="play_vs">VS</h1>
         <div class="play_video">
-          <video id="remote_video" playsinline autoplay></video>
+          <video id="video_remote" playsinline autoplay></video>
         </div>
       </section>
 
@@ -39,7 +39,9 @@
           <!-- log -->
         </ul>
       </section>
-
     </div>
+    
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript" src="./javascripts/webRTC.js"></script>
   </body>
 </html>

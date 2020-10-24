@@ -1,27 +1,31 @@
 #!/usr/bin/env node
+"use strict";
 
 /**
  * Module dependencies.
  */
 
-var app = require('../app');
-var debug = require('debug')('myapp:server');
-var http = require('http');
-var socket = require('socket.io');
+let app = require('../app');
+let debug = require('debug')('myapp:server');
+let http = require('http');
+let socket = require('socket.io');
+const { Socket } = require('dgram');
+const { token } = require('morgan');
+const { Z_ASCII } = require('zlib');
 
 /**
  * Get port from environment and store in Express.
  */
 
-var port = normalizePort(process.env.PORT || '3000');
+let port = normalizePort(process.env.PORT || '3000');
 app.set('port', port);
 
 /**
  * Create HTTP server.
  */
 
-var server = http.createServer(app);
-var io = socket(server);
+let server = http.createServer(app);
+let io = socket(server);
 
 /**
  * Listen on provided port, on all network interfaces.
@@ -31,60 +35,455 @@ server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
 
-/* ルームID管理用配列 key : socket.id */
-var roomInfo = [];
+/**
+ * CLASS 定義
+ */
+class ROOM_TBL {
+    constructor( _room_id ) {
+        this.room_id = _room_id;
+        this.positive = '';
+        this.negative = '';
+        this.watchers = [];
+        this.media_status = { positive:'none', negative:'none'};
+    }
+
+    get_positive() {
+      return this.positive;
+    }
+    get_negative() {
+      return this.negative;
+    }
+    get_watchers() {
+      return this.watchers;
+    }
+    get_watcher( _idx ) {
+      return this.watchers[_idx];
+    }
+
+    set_positive( _positive ) {
+      this.positive = _positive;
+    }
+    set_negative( _negative ) {
+      this.negative = _negative;
+    }
+    set_watcher( _watcher ) {
+      this.watchers.push( _watcher );
+    }
+
+    isRoomJoin( _type ) {
+      let ret = true;
+      if( 0 == _type && '' != this.positive ) {
+        ret = false;
+      } else if( 1 == _type && '' != this.negative ) {
+        ret = false;
+      }
+
+      return ret;
+    }
+
+    isMemberCollected() {
+      let ret = true;
+      if( '' == this.positive ) {
+        ret = false;
+      }
+      if( '' == this.negative ) {
+        ret = false;
+      }
+      if( 3 > this.watchers.length ) {
+        ret = false;
+      }
+      return ret;
+    }
+
+    show_room_member() {
+      console.log('positive :', this.positive );
+      console.log('negative :', this.negative );
+      for( let i =0; i < this.watchers.length; i++ ){
+        console.log('watcher :', this.watchers[i] );
+      }
+    }
+}
+
+class USER_TBL {
+  constructor( _socket_id, _room_id, _type , _name ) {
+    this.socket_id = _socket_id;
+    this.room_id = _room_id;
+    this.type = _type;
+    this.name = _name;
+  }
+}
+/***********************************************************
+ TBL定義 
+***********************************************************/
+let room_info_tbl = [];
+let user_info_tbl = [];
+
+/***********************************************************
+ TBL関連処理 
+***********************************************************/
+
+/**
+ * 
+ * @param _room_info ルーム情報
+ */
+function setRoomInfo( _room_info ) {
+
+  if( null == getRoomInfo( _room_info.room_id ) ) {
+    room_info_tbl.push( _room_info );
+  } else {
+    for( let room = 0; room < room_info_tbl.length; room++ ) {
+      if( _room_info.room_id == room_info_tbl[room].room_id ) {
+        room_info_tbl[room] = _room_info;
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * 
+ * @param _room_id ルームID
+ */
+function getRoomInfo( _room_id ) {
+
+  let tbl = null;
+
+  /* ルームIDが一致するROOM情報を検索する*/
+  for( let i = 0; i < room_info_tbl.length; i++ ) {
+    if( _room_id == room_info_tbl[i].room_id ) {
+      tbl = room_info_tbl[i];
+      break;
+    }
+  }
+
+  return tbl;
+}
+
+
+function removeRoomInfo( _room_id ) {
+  /* ルームIDが一致するROOM情報を検索する*/
+  for( let i = 0; i < room_info_tbl.length; i++ ) {
+    if( _room_id == room_info_tbl[i].room_id ) {
+      room_info_tbl.splice( i, 1 );
+      break;
+    }
+  }
+}
+
+
+/**
+ * 
+ * @param _room_info ルーム情報
+ */
+function setUserInfo( _user_info ) {
+
+  if( null == getUsernfo( _user_info.socket_id ) ) {
+    user_info_tbl.push( _user_info );
+  } else {
+    for( let user = 0; user < user_info_tbl.length; user++ ) {
+      if( _user_info.socket_id == user_info_tbl[user].socket_id ) {
+        user_info_tbl[user] = _user_info;
+        break;
+      }
+    }
+  }
+}
+
+/**
+ * 
+ * @param _room_id ルームID
+ */
+function getUserInfo( _socket_id ) {
+
+  let tbl = null;
+
+  /* ルームIDが一致するROOM情報を検索する*/
+  for( let user = 0; user < user_info_tbl.length; user++ ) {
+    if( _socket_id == user_info_tbl[user].socket_id ) {
+      tbl = user_info_tbl[user];
+      break;
+    }
+  }
+
+  return tbl;
+}
+
+
+function removeUserInfo( _socket_id ) {
+  /* ルームIDが一致するROOM情報を検索する*/
+  for( let user = 0; user < user_info_tbl.length; user++ ) {
+    if( _socket_id == user_info_tbl[user].socket_id ) {
+      user_info_tbl.splice( user, 1 );
+      break;
+    }
+  }
+}
+/***********************************************************
+ 共通 
+***********************************************************/
+/**
+ * 
+ * @param _from 送信元
+ * @param _to 送信先
+ * @param _msgid メッセージID
+ * @param _data 送信データ
+ */
+function createMessage( _sender, _destination, _msgid, _data ) {
+
+  let obj = {
+    header : {
+        sender: _sender,
+        destination: _destination,
+        msgid: _msgid
+    },
+    data : _data
+}
+
+  return JSON.stringify( obj );
+}
+
+const MSG_TYPE_MASK                 = 0x000F;
+const MSG_ID_MASK                   = 0xFFF0;
+
+const MSG_TYPE_REQUEST              = 0x0001;
+const MSG_TYPE_RESPONSE             = 0x0002;
+const MSG_TYPE_RTC                  = 0x0004;
+
+const MSGID_ROOM_ENTER              = 0x0010;
+const MSGID_MEDIA                   = 0x0020;
+const MSGID_CONNECTION              = 0x0040;
+const MSGID_COMMUNICATION           = 0x0080;
+const MSGID_DISCONNECTION           = 0x0100;
+const MSGID_CANDIDATE_RETRY         = 0x0200;
+
+const MSGID_ROOM_ENTER_REQ          = MSGID_ROOM_ENTER | MSG_TYPE_REQUEST;
+const MSGID_ROOM_ENTER_RES          = MSGID_ROOM_ENTER | MSG_TYPE_RESPONSE;
+const MSGID_MEDIA_REQ               = MSGID_MEDIA | MSG_TYPE_REQUEST;
+const MSGID_MEDIA_RES               = MSGID_MEDIA | MSG_TYPE_RESPONSE;
+const MSGID_CONNECTION_REQ          = MSGID_CONNECTION | MSG_TYPE_REQUEST;
+const MSGID_CONNECTION_RES          = MSGID_CONNECTION | MSG_TYPE_RESPONSE;
+const MSGID_DISCONNECTION_REQ       = MSGID_DISCONNECTION | MSG_TYPE_REQUEST;
+const MSGID_DISCONNECTION_RES       = MSGID_DISCONNECTION | MSG_TYPE_RESPONSE;
+const MSGID_COMMUNICATION_RTC       = MSGID_COMMUNICATION | MSG_TYPE_RTC;
+const MSGID_CANDIDATE_RETRY_RTC     = MSGID_CANDIDATE_RETRY | MSG_TYPE_RTC;
 
 io.on('connection', (socket) => {
- 
-  socket.on('message', (message) => {
 
-    for(const [index, item] of roomInfo.entries() ) {
+    console.log('connection', socket.id );
 
-      if( item.socketID == socket.id ) {
+    socket.on('message', function( _message ) {
+
+      //console.log('message', _message );
+
+      let message = JSON.parse( _message );
+
+      switch ( message.header.msgid & MSG_ID_MASK ) {
+          case MSGID_ROOM_ENTER:
+
+            if( MSG_TYPE_REQUEST == ( message.header.msgid & MSG_TYPE_MASK ) ) {
+
+                let room_info = getRoomInfo( message.data.room_id );
+                let room_join_result = false;
+
+                /** ルームTBLがあるか */
+                if( null == room_info ) {
+                  room_info = new ROOM_TBL( message.data.room_id );
+                }
+
+                /** ルームに参加可能か */
+                if( true == room_info.isRoomJoin( message.data.room_type ) ) {
+
+                  /** 肯定 */
+                  if( 0 == message.data.room_type ) {
+                    room_info.set_positive( message.header.sender );
+                  /** 否定 */
+                  } else if( 1 == message.data.room_type ) {
+                    room_info.set_negative( message.header.sender );
+                  /** 視聴 */
+                  } else if( 2 == message.data.room_type ) {
+                    room_info.set_watcher( message.header.sender );
+                  }
+                  
+                  /** ユーザー情報を登録する */
+                  user_info_tbl.push( new USER_TBL( message.header.sender, message.data.room_id, message.data.room_type, message.data.user_name ) );
+
+                  /** ルームに入れる */
+                  socket.join( message.data.room_id );
+
+                  /** ルーム参加成功 */
+                  room_join_result = true;
+
+                } else {
+                  console.log('room join not success...', message.data.room_id, message.data.room_type );
+                }
+
+                /** ルーム情報を更新する */
+                setRoomInfo( room_info );
+
+                /** ENTER応答 メッセージ送信 */
+                let msg = createMessage( message.header.sender, 'admin', MSGID_ROOM_ENTER_RES, { room_join_result: room_join_result } );
+                socket.emit('message', msg );
+
+                /** ゲームを始められる条件がそっろたか */
+                if( true == room_info.isMemberCollected() ) {
+                  /** [positive] MEDIA要求 メッセージ送信 */
+                  let msg = createMessage( room_info.get_positive(), 'admin', MSGID_MEDIA_REQ, { dummy: null} );
+                  io.to( room_info.get_positive()).emit('message', msg );
+
+                   /** [negative] MEDIA要求 メッセージ送信 */
+                  msg = createMessage( room_info.get_negative(), 'admin', MSGID_MEDIA_REQ, { dummy: null} );
+                  io.to( room_info.get_negative() ).emit('message', msg );
+                }
+            }
+            break;
+
+          case MSGID_MEDIA:
+
+            let msg = null;
+
+            if( MSG_TYPE_RESPONSE == ( message.header.msgid & MSG_TYPE_MASK ) ) {
+              let room_info = getRoomInfo( message.data.room_id );
+
+              if( 0 == message.data.user_type ){
+                room_info.media_status.positive = 'media';
+              } else if( 1 == message.data.user_type ){
+                room_info.media_status.negative = 'media';
+              }
+
+              console.log( room_info.media_status );
+              
+              if( 'media' == room_info.media_status.positive && 
+                  'media' == room_info.media_status.negative ) {
+                  
+                  /** [positive <--> negative] RTC接続要求 メッセージ送信 */
+                  msg = createMessage( room_info.get_positive(), room_info.get_negative(), MSGID_CONNECTION_REQ, { isWacther: false} );
+                  io.to( room_info.get_positive()).emit('message', msg );
+              }
+            }
+            break;
+
+          case MSGID_CONNECTION:
+
+            let room_info = getRoomInfo( message.data.room_id );
+
+            if( MSG_TYPE_RESPONSE == ( message.header.msgid & MSG_TYPE_MASK ) ) {
+              
+              let check = true;
+
+              for( let i = 0; i < room_info.watchers.length; i++ ) {
+                if( message.header.sender == room_info.get_watcher(i) ||
+                    message.header.destination == room_info.get_watcher(i)) {
+                      check = false;
+                      break;
+                }
+              }
+
+              if( true == check ) {
+                
+                if( message.header.sender == room_info.get_positive() ) {
+                  room_info.media_status.positive = 'connected';
+                } else if( message.header.sender == room_info.get_negative() ) {
+                  room_info.media_status.negative = 'connected';
+                }
+
+                console.log('media status', room_info.media_status );
+
+                if( 'connected' == room_info.media_status.positive && 
+                    'connected' == room_info.media_status.negative ) {
+
+                    let msg = null;
+                    
+                    console.log('connection watchers', room_info.watchers.length );
+
+                    for( let i = 0; i < room_info.watchers.length; i++ ) {
+
+                      console.log('target watcher ', i );
+
+                      /** [positive <--> watcher] RTC接続要求 メッセージ送信 */
+                      msg = createMessage( room_info.get_positive(), room_info.get_watcher(i), MSGID_CONNECTION_REQ, { isWacther: true} );
+                      io.to( room_info.get_positive() ).emit('message', msg );
         
-        console.log('message', item, index );
+                      /** [negative <--> watcher] RTC接続要求 メッセージ送信 */
+                      msg = createMessage( room_info.get_negative(), room_info.get_watcher(i), MSGID_CONNECTION_REQ, { isWacther: true} );
+                      io.to( room_info.get_negative()).emit('message', msg );
+                    }
+                }
+              }
+            }
+            break;
 
-        /* シグナリング処理 */
-        socket.broadcast.to( item.room ).emit('message', message );
+          case MSGID_COMMUNICATION:
+            if( MSG_TYPE_RTC == ( message.header.msgid & MSG_TYPE_MASK ) ) {
 
-        break;
+              /** [positive] MEDIA要求 メッセージ送信 */
+              let msg = createMessage( message.header.sender, message.header.destination, MSGID_COMMUNICATION_RTC, message.data );
+              io.to( message.header.destination ).emit('message', msg );
+            }
+            break;
+
+          case MSGID_CANDIDATE_RETRY:
+            if( MSG_TYPE_RTC == ( message.header.msgid & MSG_TYPE_MASK ) ) {
+              /** [positive] MEDIA要求 メッセージ送信 */
+              let msg = createMessage( message.header.sender, message.header.destination, MSGID_CANDIDATE_RETRY_RTC, message.data );
+              io.to( message.header.destination ).emit('message', msg );
+            }
+            break;
+            
+          default:
+            break;
       }
-    }
-  });
 
-  socket.on('init', (roomID, user_name ) => {
+    });
 
-    /* ユーザ毎にルームIDを管理する */
-    roomInfo.push( { socketID: socket.id, room:roomID, name:user_name } );
+    socket.on('disconnect', function() {
 
-    /* roomに参加する */
-    socket.join(roomID);
+      console.log('disconnect', socket.id );
+      
+      let room_info = null;
+      let user_info = null;
 
-    /* roomメンバーに入室通知をする */
-    socket.broadcast.to(roomID).emit('req_join_room', user_name + 'さんが入室しました');
-  });
+      /** 切断したユーザーの情報を取得する */
+      user_info = getUserInfo( socket.id );
+
+      /** [positive] MEDIA要求 メッセージ送信 */
+      let msg = createMessage( 'admin', 'admin', MSGID_DISCONNECTION_REQ, { disconnect_socket: socket.id } );
+      socket.broadcast.to( user_info.room_id ).emit('message', msg );
+
+      /** 切断したユーザーのルーム情報を取得する */
+      room_info = getRoomInfo( user_info.room_id )
+
+      /** 切断したユーザー情報を削除する */
+      if( 0 == user_info.type ) {
+        room_info.positive = '';
+        room_info.media_status.positive = 'node';
+      } else if( 1 == user_info.type ) {
+        room_info.negative = '';
+        room_info.media_status.negative = 'node';
+      } else if( 2 == user_info.type ) {
+        for( let watch = 0; watch < room_info.watchers.length; watch++ ) {
+          if( user_info.socket_id == room_info.watchers[watch] ) {
+            room_info.watchers.splice( watch, 1 );
+            break;
+          }
+        }
+      }
+
+      /** ルームに誰もいなくなったらルームを削除する */
+      if( '' == room_info.get_positive() && 
+          '' == room_info.get_negative() &&
+          0 == room_info.get_watchers().length ) {
+            removeRoomInfo( room_info.room_id );
+      }
+      else {
+        /** ルーム情報を更新する */
+        setRoomInfo( room_info );
+      }
+
+      /** ユーザー情報を削除する */
+      removeUserInfo( socket.id );
+
+    });
   
-  socket.on('disconnect', () => {
-
-    for(const [index, item] of roomInfo.entries() ) {
-
-      if( item.socketID == socket.id ) {
-
-        console.log('disconnect', item, index );
-
-        /* roomから抜く*/
-        socket.leave( item.room );
-
-        /* roomメンバーに退室通知をする */
-        socket.broadcast.to( item.room ).emit('req_leave_room', item.name + 'さんが退室しました');
-
-        roomInfo.splice( index, 1 );
-
-        break;
-      }
-    }
-  });
-
 });
 
 
@@ -93,7 +492,7 @@ io.on('connection', (socket) => {
  */
 
 function normalizePort(val) {
-  var port = parseInt(val, 10);
+  let port = parseInt(val, 10);
 
   if (isNaN(port)) {
     // named pipe
@@ -117,7 +516,7 @@ function onError(error) {
     throw error;
   }
 
-  var bind = typeof port === 'string'
+  let bind = typeof port === 'string'
     ? 'Pipe ' + port
     : 'Port ' + port;
 
@@ -141,8 +540,8 @@ function onError(error) {
  */
 
 function onListening() {
-  var addr = server.address();
-  var bind = typeof addr === 'string'
+  let addr = server.address();
+  let bind = typeof addr === 'string'
     ? 'pipe ' + addr
     : 'port ' + addr.port;
   debug('Listening on ' + bind);
